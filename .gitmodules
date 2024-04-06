@@ -1,0 +1,3 @@
+[submodule "hamlib/src/main/cpp/hamlib"]
+	path = hamlib/src/main/cpp/hamlib
+	url = https://github.com/edward-p/Hamlib.git

@@ -1,13 +1,11 @@
-package xyz.edward_p.hamlib
+package xyz.edward_p.hamlib.service
 
 import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
-import android.bluetooth.BluetoothSocket
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
@@ -16,6 +14,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import xyz.edward_p.hamlib.HamlibJNI
 import java.io.IOException
 import java.util.UUID
 
@@ -24,16 +23,9 @@ import java.util.UUID
  * This service connects the BluetoothSocket I/O
  * and pseudo terminal master
  */
-class SPPService() : Service() {
+class HamlibSPPService() : Service() {
 
     val SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-
-    private lateinit var device: BluetoothDevice
-    private lateinit var socket: BluetoothSocket
-
-    private lateinit var sppThread: Thread
-
-    private lateinit var ptmThread: Thread
 
     override fun onBind(intent: Intent): IBinder? {
         return null;
@@ -46,7 +38,7 @@ class SPPService() : Service() {
 
             val chan = NotificationChannel(
                 "all",
-                "channelName",
+                "hamlib",
                 NotificationManager.IMPORTANCE_MIN
             )
             chan.description = "all"
@@ -54,7 +46,7 @@ class SPPService() : Service() {
 
             val notificationBuilder = NotificationCompat.Builder(this, chan.id)
             val notification = notificationBuilder.setOngoing(true)
-                .setContentTitle("SPPService")
+                .setContentTitle("HamlibSPPService")
                 .setPriority(NotificationManager.IMPORTANCE_MIN)
                 .setCategory(Notification.CATEGORY_SERVICE)
                 .build()
@@ -72,38 +64,45 @@ class SPPService() : Service() {
 
     override fun onCreate() {
         startForeground()
-        Log.d("SPPService", "onCreate")
     }
 
-    private fun connectSPPDevice(intent: Intent?) {
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
-        val address = intent?.extras?.getString("address")
-        Log.d("SPPService", "address: ${address}")
-        if (address.isNullOrBlank()) {
-            return
-        }
 
         val bluetoothManager = getSystemService(BluetoothManager::class.java)
+        val bluetoothAdapter = bluetoothManager.adapter
 
         if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_SCAN
+            ) != PackageManager.PERMISSION_GRANTED
+            || ActivityCompat.checkSelfPermission(
                 this,
                 Manifest.permission.BLUETOOTH_CONNECT
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            Log.d("SPPService", "no permission")
-            return
+            return START_NOT_STICKY
         }
 
-        device =
-            bluetoothManager.adapter.bondedDevices.find { d -> d.address.equals(address) } ?: return
+        bluetoothAdapter.cancelDiscovery()
 
-        Log.d("SPPService", "Connecting to: ${device.name} ${device.address}")
+        val address = intent?.extras?.getString("address")
+        Log.d("HamlibSPPService", "address: ${address}")
+        if (address.isNullOrBlank()) {
+            return START_NOT_STICKY
+        }
 
-        try {
-            socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+
+        val device = bluetoothAdapter.bondedDevices.find { d -> d.address.equals(address) }
+            ?: return START_NOT_STICKY
+
+        Log.d("HamlibSPPService", "Connecting to: ${device.name} ${device.address}")
+
+        val socket = try {
+            device.createRfcommSocketToServiceRecord(SPP_UUID)
         } catch (ex: IOException) {
-            Log.e("SPPService", "Failed to create RfComm socket: " + ex.toString())
-            return
+            Log.e("HamlibSPPService", "Failed to create RfComm socket: " + ex.toString())
+            return START_NOT_STICKY
         }
 
         for (i in 1..5) {
@@ -111,57 +110,60 @@ class SPPService() : Service() {
                 socket.connect()
                 break
             } catch (ex: IOException) {
-                Log.e("SPPService", "Failed to connect. Retrying: " + ex.toString())
+                Log.e("HamlibSPPService", "Failed to connect. Retrying: " + i, ex)
                 continue
-
             }
         }
-    }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
-        connectSPPDevice(intent)
-        if (socket.isConnected) {
-            sppThread = Thread {
-                val inputStream = socket.inputStream
-                val outputStream = Pty.getInstance().getOutputStream()
-                inputStream.use {
-                    val buf = ByteArray(512)
-                    while (!Thread.interrupted()) {
-                        val len = inputStream.read(buf)
-                        if (len > 0) {
-                            outputStream.write(buf, 0, len)
-                            outputStream.flush()
-                        }
-                    }
-                }
-            }
+        if (socket.isConnected) {;
 
-            ptmThread = Thread {
-                val inputStream = Pty.getInstance().getInputStream()
+            Thread {
+                val inputStream = HamlibJNI.instance.getInputStream()
                 val outputStream = socket.outputStream
-                inputStream.use {
+                try {
                     val buf = ByteArray(512)
                     while (!Thread.interrupted()) {
                         val len = inputStream.read(buf)
-                        if (len > 0) {
-                            outputStream.write(buf, 0, len)
-                            outputStream.flush()
-                        }
+                        if (len == -1) return@Thread;
+                        outputStream.write(buf, 0, len)
+                        outputStream.flush()
                     }
+                } catch (ex: Exception) {
+                    // just exit
+                    Log.e("ptmThread", "ioexception", ex);
+                } finally {
+                    outputStream.close()
+                    inputStream.close()
                 }
-            }
+            }.start()
 
-            sppThread.start()
-            ptmThread.start()
+            Thread {
+                val inputStream = socket.inputStream
+                val outputStream = HamlibJNI.instance.getOutputStream()
+                try {
+                    val buf = ByteArray(512)
+                    while (!Thread.interrupted()) {
+                        val len = inputStream.read(buf)
+                        if (len == -1) return@Thread;
+
+                        outputStream.write(buf, 0, len)
+                        outputStream.flush()
+                    }
+
+                } catch (ex: IOException) {
+                    // Just exit
+                    Log.e("sppThread", "ioexception", ex);
+                } finally {
+                    outputStream.close()
+                    inputStream.close()
+                    socket.close()
+                }
+            }.start()
+
         }
 
-
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
-    override fun onDestroy() {
-        sppThread.interrupt()
-        ptmThread.interrupt()
-    }
 }

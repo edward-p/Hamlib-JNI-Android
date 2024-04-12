@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.ParcelUuid
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,6 +30,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
+import xyz.edward_p.hamlib.service.HamlibSPPService
 import xyz.edward_p.hamlib.ui.theme.HamlibTheme
 import java.util.UUID
 
@@ -55,6 +55,22 @@ class BluetoothActivity : ComponentActivity() {
                     isGranted = result
                 }
                 requestPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+
+                if (isGranted) this.finish()
+            }
+
+            if (ActivityCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.BLUETOOTH_SCAN
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                var isGranted = false;
+                val requestPermissionLauncher = registerForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) { result ->
+                    isGranted = result
+                }
+                requestPermissionLauncher.launch(Manifest.permission.BLUETOOTH_SCAN)
 
                 if (isGranted) this.finish()
             }
@@ -97,7 +113,7 @@ class BluetoothActivity : ComponentActivity() {
                                     .clickable {
                                         val intent = Intent(
                                             this@BluetoothActivity,
-                                            SPPService::class.java
+                                            HamlibSPPService::class.java
                                         )
                                         intent.putExtra("address", device.address)
                                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

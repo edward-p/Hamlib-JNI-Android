@@ -1,6 +1,9 @@
 package xyz.edward_p.hamlib
 
 import xyz.edward_p.hamlib.data.Rig
+import java.io.FileDescriptor
+import java.io.FileInputStream
+import java.io.FileOutputStream
 
 /**
  * Hamlib JNI bindings
@@ -15,15 +18,15 @@ class HamlibJNI private constructor() {
 
     external fun getAllRigs(): Array<Rig>
 
-    external fun rigInit(rigModel:Int): Int
+    external fun rigInit(rigModel: Int): Int
 
-    external fun rigOpen(devName:String):Int
+    external fun rigOpen(): Int
 
     external fun rigClose(): Int
 
     external fun rigCleanUp(): Int
 
-    external fun rigSetFreq(vfo:Int, freq:Double): Int
+    external fun rigSetFreq(vfo: Int, freq: Double): Int
 
 
     companion object {
@@ -36,20 +39,27 @@ class HamlibJNI private constructor() {
             System.loadLibrary("hamlibjni")
         }
 
-        @Volatile
-        private var instance: HamlibJNI?=null
+        val instance = HamlibJNI()
 
-        fun getInstance(): HamlibJNI {
-            if (instance == null) {
-                synchronized(this) {
-                    if (instance == null) {
-                        instance = HamlibJNI()
-                    }
-                }
-            }
-            return instance!!
-        }
+    }
 
+
+    private external fun getPtm(): Int
+    private fun wrapFileDescriptor(fd: Int): FileDescriptor {
+        val fileDescriptor = FileDescriptor()
+        val fileDescriptorClass = FileDescriptor::class.java
+        val field = fileDescriptorClass.getDeclaredField("descriptor")
+        field.isAccessible = true
+        field.set(fileDescriptor, fd)
+        return fileDescriptor
+    }
+
+    fun getInputStream(): FileInputStream {
+        return FileInputStream(wrapFileDescriptor(getPtm()))
+    }
+
+    fun getOutputStream(): FileOutputStream {
+        return FileOutputStream(wrapFileDescriptor(getPtm()))
     }
 
 

@@ -142,16 +142,6 @@ Java_xyz_edward_1p_hamlib_HamlibJNI_rigOpen(JNIEnv *env, jobject thiz) {
 }
 
 JNIEXPORT jint JNICALL
-Java_xyz_edward_1p_hamlib_HamlibJNI_rigClose(JNIEnv *env, jobject thiz) {
-    if (fcntl(ptm, F_GETFD) != -1) {
-        close(ptm);
-        ptm = -1;
-    }
-
-    return rig_close(my_rig);
-}
-
-JNIEXPORT jint JNICALL
 Java_xyz_edward_1p_hamlib_HamlibJNI_rigCleanUp(JNIEnv *env, jobject thiz) {
     rig_cleanup(my_rig);
 

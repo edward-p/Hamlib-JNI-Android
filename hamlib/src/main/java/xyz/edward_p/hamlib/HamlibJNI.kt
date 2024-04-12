@@ -22,8 +22,6 @@ class HamlibJNI private constructor() {
 
     external fun rigOpen(): Int
 
-    external fun rigClose(): Int
-
     external fun rigCleanUp(): Int
 
     external fun rigSetFreq(vfo: Int, freq: Double): Int
